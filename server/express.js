@@ -174,6 +174,10 @@ const tryFindLoops = async () => {
             let filename = graphToolsDir+randomString(10)+".json";
             let filedata = JSON.stringify({promises: r.data.data.allCurrentPromises, graph: graph});
             await fs.writeFile(filename, filedata);
+            // working here
+            // now we need to call the python and feed it this file;
+            // we also need to add the existing proposeReciprocity messages so we don't
+            // keep refinding the same loops
         }
     } catch(e) {
         console.log("error trying to find loops: ", e.message);
