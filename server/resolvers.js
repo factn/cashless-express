@@ -27,6 +27,8 @@ module.exports = {
         }
     },
     Query: {
+        allCurrentPromises: (_, __, {dataSources}) =>
+            dataSources.ssbFlumeAPI.getActivePromises(),
         allPromises: (_, __, {dataSources}) =>
             dataSources.ssbFlumeAPI.getAllPromises(),
         promises: (_, { feedId }, {dataSources}) =>

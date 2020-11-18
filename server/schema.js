@@ -73,6 +73,7 @@ const typeDefs = gql`
         claimName: ID
         claim: ReservesClaim
         isLatest: Boolean
+        reciprocity: CompleteReciprocityMessage
     }
 
     type IdentityMessage implements Message {
@@ -107,6 +108,54 @@ const typeDefs = gql`
         claim: ReservesClaim
         tx: ID
         confirmed: Boolean
+    }
+
+    type ProposeReciprocityMessage implements Message {
+        id: ID!
+        type: MsgType!
+        header: Header
+        previous: String
+        hash: HashFunc
+        author: Feed
+        sequence: Int
+        timestamp: Date
+        signature: String
+        amount: Float
+        denomination: Denomination
+        promises: [PromiseMessage]
+        reciprocityId: ID
+    }
+
+    type AcceptReciprocityMessage implements Message {
+        id: ID!
+        type: MsgType!
+        header: Header
+        previous: String
+        hash: HashFunc
+        author: Feed
+        sequence: Int
+        timestamp: Date
+        signature: String
+        proposal: ProposeReciprocityMessage
+        outgoingOriginalClaim: ReservesClaim
+        incomingOriginalClaim: ReservesClaim
+        outgoingUpdatedClaim: ReservesClaim
+        incomingUpdatedClaim: ReservesClaim
+    }
+
+    type CompleteReciprocityMessage implements Message {
+        id: ID!
+        type: MsgType!
+        header: Header
+        previous: String
+        hash: HashFunc
+        author: Feed
+        sequence: Int
+        timestamp: Date
+        signature: String
+        proposal: ProposeReciprocityMessage
+        originalClaims: [ReservesClaim]
+        updatedClaims: [ReservesClaim]
     }
 
     type GenericMessage implements Message {
@@ -164,6 +213,9 @@ const typeDefs = gql`
         IDENTITY
         GENERIC
         COMPLETE_SETTLEMENT
+        PROPOSE_RECIPROCITY
+        ACCEPT_RECIPROCITY
+        COMPLETE_RECIPROCITY
     }
 
     enum EvidenceType {
@@ -185,6 +237,7 @@ const typeDefs = gql`
 
     type Query {
         allFeedIds: [ID]
+        allCurrentPromises: [PromiseMessage]
         allPromises: [PromiseMessage]
         allIdMsgs: [IdentityMessage]
         feed(id: ID!): Feed

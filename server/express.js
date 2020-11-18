@@ -16,7 +16,7 @@ const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const fileUpload = require('express-fileupload');
 const cookieEncrypter = require('cookie-encrypter');
-//const axios = require('axios');
+const axios = require('axios');
 const fs = require('fs');
 const { sentry } = require('./lib/errors');
 const cors = require('cors');
@@ -44,6 +44,7 @@ const cookieOptions = {
 
 const keyshareDir = process.env.KEYSHARE_DIR || `${__dirname}/`;
 console.log('key and key commands dir:', keyshareDir);
+const graphToolsDir = `${__dirname}/graphTools/`;
 
 const sh = cmd =>
   new Promise(function(resolve, reject) {
@@ -129,8 +130,55 @@ app.post('/publish', async (req, res) => {
     return res.json({ status: 'fail' });
   }
 
+  if (req.body.content.type=="cashless/promise") {
+     tryFindLoops();
+  }
+
   return res.json({ status: 'ok' });
 });
+
+const randomString = (n) => {
+    var result           = '';
+    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var charactersLength = characters.length;
+    for ( var i = 0; i < n; i++ ) {
+       result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    }
+    return result;
+}
+
+const tryFindLoops = async () => {
+    const query = `query { allCurrentPromises {
+        claimName
+        amount
+        author {
+            id
+        }
+        recipient {
+            id
+        }
+    }}`;
+    try {
+        let r = await axios.post('http://127.0.0.1:4000', {query:query}, {});
+        if (r.data.data.allCurrentPromises != null) {
+            let graph = {};
+            for (let i=0; i<r.data.data.allCurrentPromises.length; i++) {
+                if (r.data.data.allCurrentPromises[i].recipient.id !== null) {
+                    if (graph[r.data.data.allCurrentPromises[i].author.id] !== undefined && !graph[r.data.data.allCurrentPromises[i].author.id].includes(r.data.data.allCurrentPromises[i].recipient.id)) {
+                        graph[r.data.data.allCurrentPromises[i].author.id].push(r.data.data.allCurrentPromises[i].recipient.id);
+                    } else {
+                        graph[r.data.data.allCurrentPromises[i].author.id] = [r.data.data.allCurrentPromises[i].recipient.id];
+                    }
+                }
+            }
+            let filename = graphToolsDir+randomString(10)+".json";
+            let filedata = JSON.stringify({promises: r.data.data.allCurrentPromises, graph: graph});
+            await fs.writeFile(filename, filedata);
+        }
+    } catch(e) {
+        console.log("error trying to find loops: ", e.message);
+    }
+}
 
 app.post('/authenticatedEmail', async (req, res) => {
     let ssbid = req.body.ssbIdentity;
@@ -143,7 +191,7 @@ app.post('/authenticatedEmail', async (req, res) => {
     if (!ok) {
         return res.json({status: 'fail'});
     }
-    let content =  {feed: {id: ssbid}, name: {type: "ACCOUNT", accountType:"GOOGLE", handle: user.email}, type: "cashless/identity", header: {version: version, network: network}, evidence:null};
+    let content =  {feed: {id: ssbid}, name: {type: "ACCOUNT", accountType: "GOOGLE", handle: user.email}, type: "cashless/identity", header: {version: version, network: network}, evidence:null};
     try {
         await ssb.client().identities.publishAs({
           key: ssbSecret,

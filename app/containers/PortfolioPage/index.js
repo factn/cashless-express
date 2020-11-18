@@ -15,16 +15,11 @@ import TransactionBlob from 'components/TransactionBlob';
 
 const parsePromisesGross = (promises) => {
     let gross = 0;
-    let grossPending = 0;
     for (let i=0; i<promises.length; i++) {
-        if (promises[i].nonce > 0) {
-            gross += promises[i].amount;
-        } else if (promises[i].nonce==0) {
-            grossPending += promises[i].amount;
-        }
+        gross += promises[i].amount;
     }
 
-    return {gross: gross, grossPending: grossPending};
+    return gross;
 }
 
 const providerURL = "https://"+cashless.network+".infura.io/v3/"+cashless.infuraAPIKey;
@@ -134,16 +129,16 @@ export default function ProfilePage(props) {
   }
 
   const renderAssets = () => {
-      let promiseAmounts = parsePromisesGross(myFeed.assets);
+      let gross = parsePromisesGross(myFeed.assets);
       return (
-        <span><span className="green">${promiseAmounts.gross.toFixed(2)}</span> {promiseAmounts.grossPending>0 ? <span>{'(pending: '}<span className="yellow">${promiseAmounts.grossPending.toFixed(2)}</span>{')'}</span>:<span></span>}</span>
+        <span><span className="green">${gross.toFixed(2)}</span></span>
       );
   }
 
   const renderLiabilities = () => {
-    let promiseAmounts = parsePromisesGross(myFeed.liabilities);
+    let gross = parsePromisesGross(myFeed.liabilities);
     return (
-      <span><span className="red">${promiseAmounts.gross.toFixed(2)}</span> {promiseAmounts.grossPending>0 ? <span>{'(pending: '}<span className="yellow">${promiseAmounts.grossPending.toFixed(2)}</span>{')'}</span>:<span></span>}</span>
+      <span><span className="red">${gross.toFixed(2)}</span></span>
     );
   }
 

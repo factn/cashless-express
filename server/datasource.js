@@ -28,7 +28,7 @@ class ssbFlumeAPI extends DataSource {
     this.context = config.context;
   }
 
-  promiseReducer(promise) {
+  async promiseReducer(promise) {
       promise.value.content.from.reserves.type = "RESERVES";
       if (promise.value.content.from.commonName != null) {
         promise.value.content.from.commonName.type = "COMMON";
@@ -45,6 +45,10 @@ class ssbFlumeAPI extends DataSource {
         }
       }
       promise.value.content.to.type = "FEED";
+      let reciprocity;
+      if (promise.value.content.reciprocityId!=null) {
+        reciprocity = await this.getCompleteReciprocityByIds({reciprocityId: promise.value.content.reciprocityId, feedId: promise.value.author});
+      }
       return {
         type: "PROMISE",
         id: promise.key,
@@ -68,11 +72,12 @@ class ssbFlumeAPI extends DataSource {
            data: promise.value.content.promise.claimData,
            fromSignature: promise.value.content.promise.fromSignature,
            toSignature: promise.value.content.promise.toSignature,
-        }
+        },
+        reciprocity: reciprocity,
       }
   }
 
-  identityReducer(idMsg) {
+  async identityReducer(idMsg) {
     idMsg.value.content.feed.type = "FEED";
     return {
       type: "IDENTITY",
@@ -90,7 +95,78 @@ class ssbFlumeAPI extends DataSource {
     }
   }
 
-  genericReducer(msg) {
+  async completeSettlementReducer(msg) {
+    return {
+        type: "COMPLETE_SETTLEMENT",
+        id: msg.key,
+        author: {id: msg.value.author},
+        hash: msg.value.hash.toUpperCase(),
+        header: msg.value.content.header,
+        previous: msg.value.previous,
+        signature: msg.value.signature,
+        timestamp: msg.value.timestamp,
+        claim: msg.value.content.claim,
+        claimName: msg.value.content.claimName,
+        nonce: msg.value.content.nonce,
+        amount: msg.value.content.amount,
+        denomination: msg.value.content.denomination,
+        tx: msg.value.content.tx,
+    }
+  }
+
+  async proposeReciprocityReducer(msg) {
+      return {
+        type: "PROPOSE_RECIPROCITY",
+        id: msg.key,
+        author: {id: msg.value.author},
+        hash: msg.value.hash.toUpperCase(),
+        header: msg.value.content.header,
+        previous: msg.value.previous,
+        signature: msg.value.signature,
+        timestamp: msg.value.timestamp,
+        amount: msg.value.content.amount,
+        denomination: msg.value.content.denomination,
+        reciprocityId: msg.value.content.reciprocityId,
+      }
+  }
+
+  async acceptReciprocityReducer(msg) {
+    let proposal = await this.getProposeReciprocityById({reciprocityId: msg.value.content.reciprocityId});
+    return {
+        type: "ACCEPT_RECIPROCITY",
+        id: msg.key,
+        author: {id: msg.value.author},
+        hash: msg.value.hash.toUpperCase(),
+        header: msg.value.content.header,
+        previous: msg.value.previous,
+        signature: msg.value.signature,
+        timestamp: msg.value.timestamp,
+        proposal: proposal,
+        incomingOriginalClaim: msg.value.content.incomingOriginalClaim,
+        outgoingOriginalClaim: msg.value.content.outgoingOriginalClaim,
+        incomingUpdatedClaim: msg.value.content.incomingUpdatedClaim,
+        outgoingUpdatedClaim: msg.value.content.outgoingUpdatedClaim,
+    }
+  }
+
+  async completeReciprocityReducer(msg) {
+      let proposal = await this.getProposeReciprocityById({reciprocityId: msg.value.content.reciprocityId});
+      return {
+        type: "COMPLETE_RECIPROCITY",
+        id: msg.key,
+        author: {id: msg.value.author},
+        hash: msg.value.hash.toUpperCase(),
+        header: msg.value.content.header,
+        previous: msg.value.previous,
+        signature: msg.value.signature,
+        timestamp: msg.value.timestamp,
+        proposal: proposal,
+        originalClaims: msg.value.content.originalClaims,
+        updatedClaims: msg.value.content.updatedClaims
+      }
+  }
+
+  async genericReducer(msg) {
       return {
         type: "GENERIC",
         id: msg.key,
@@ -102,25 +178,6 @@ class ssbFlumeAPI extends DataSource {
         timestamp: msg.value.timestamp,
         content: JSON.stringify(msg.value.content),
     }
-  }
-
-  completeSettlementReducer(msg) {
-      return {
-          type: "COMPLETE_SETTLEMENT",
-          id: msg.key,
-          author: {id: msg.value.author},
-          hash: msg.value.hash.toUpperCase(),
-          header: msg.value.content.header,
-          previous: msg.value.previous,
-          signature: msg.value.signature,
-          timestamp: msg.value.timestamp,
-          claim: msg.value.content.claim,
-          claimName: msg.value.content.claimName,
-          nonce: msg.value.content.nonce,
-          amount: msg.value.content.amount,
-          denomination: msg.value.content.denomination,
-          tx: msg.value.content.tx,
-      }
   }
 
   async getFeed({ feedId }) {
@@ -196,6 +253,7 @@ class ssbFlumeAPI extends DataSource {
       }
       let feedMsgs = await this.getFeedMessages({ feedId });
       return {
+          type: "FEED",
           id: feedId,
           publicKey: feedId.substring(1, feedId.length),
           messages: feedMsgs,
@@ -227,7 +285,7 @@ class ssbFlumeAPI extends DataSource {
                 query: myQuery,
             })
         );
-        return results.map(result => this.identityReducer(result));
+        return Promise.all(results.map(async (result) => await this.identityReducer(result)));
     } catch(e) {
         console.log("ERROR QUERYING FLUME DB:", e);
         return [];
@@ -251,7 +309,7 @@ class ssbFlumeAPI extends DataSource {
                 query: myQuery,
             })
         );
-        return results.map(result => this.identityReducer(result));
+        return Promise.all(results.map(async (result) => await this.identityReducer(result)));
     } catch(e) {
         console.log("ERROR QUERYING FLUME DB:", e);
         return [];
@@ -275,7 +333,7 @@ class ssbFlumeAPI extends DataSource {
                 query: myQuery,
             })
         );
-        return results.map(result => this.completeSettlementReducer(result));
+        return Promise.all(results.map(async (result) => await this.completeSettlementReducer(result)));
     } catch(e) {
         console.log("ERROR QUERYING FLUME DB:", e);
         return [];
@@ -299,7 +357,7 @@ class ssbFlumeAPI extends DataSource {
                 query: myQuery,
             })
         );
-        return results.map(result => this.completeSettlementReducer(result));
+        return Promise.all(results.map(async (result) => await this.completeSettlementReducer(result)));
     } catch(e) {
         console.log("ERROR QUERYING FLUME DB:", e);
         return [];
@@ -334,7 +392,7 @@ class ssbFlumeAPI extends DataSource {
                 query: myQuery,
             })
         );
-        let promises = results.map(result => this.promiseReducer(result));
+        let promises = Promise.all(results.map(async (result) => await this.promiseReducer(result)));
         let promiseMap = {};
         for (let j=0; j<promises.length; j++) {
             promises[j].isLatest = false;
@@ -374,12 +432,32 @@ class ssbFlumeAPI extends DataSource {
     }
   }
 
+  async getActivePromises() {
+    let allPromises = await this.getAllPromises();
+    let promises = [];
+    for (let i=0; i<allPromises.length; i++) {
+        if (allPromises[i].isLatest) {
+            if (allPromises[i].nonce > 0) {
+                let settlement = await this.getSettlementByClaimName({ claimName: allPromises[i].claimName});
+                if (settlement.length == 0) {
+                    promises.push(allPromises[i]);
+                }
+            } else {
+                promises.push(allPromises[i]);
+            }
+        }
+    }
+
+    return promises;
+  }
+
   async getPromiseChain({ claimName, feedId }) {
     const myQuery = [{
         "$filter": {
         value: {
             author: feedId,
             content: {
+                header:  {version: this.version, network: this.network},
                 promise: {
                     claimName: claimName
                 }
@@ -393,7 +471,7 @@ class ssbFlumeAPI extends DataSource {
                 query: myQuery,
             })
         );
-        let promises = results.map(result=> this.promiseReducer(result));
+        let promises = Promise.all(results.map(async (result) => await this.promiseReducer(result)));
         let highest = 0;
         for (let i=0; i<promises.length; i++) {
             if (promises[i].nonce > highest) {
@@ -427,6 +505,182 @@ class ssbFlumeAPI extends DataSource {
     return promise;
   }
 
+  async getProposeReciprocityById({ reciprocityId }) {
+    let proposals = await this.getReciprocityProposalsByFeedId({feedId: ssb.client().id});
+    let proposal;
+    for (let i=0; i<proposals.length; i++) {
+        if (proposals[i].reciprocityId == reciprocityId) {
+            proposal = proposals[i];
+            break
+        }
+    }
+
+    return proposal;
+  }
+
+  async getActiveReciprocityProposalsByFeedId({ feedId }) {
+    let proposals = await this.getReciprocityProposalsByFeedId({feedId: feedId});
+    let completed = await this.getAllCompletedReciprocityIds();
+    let activeProposals = [];
+    for (let i=0; i<proposals.length; i++) {
+        if (!completed.includes(proposals[i].reciprocityId)) {
+            activeProposals.push(proposals);
+        }
+    }
+
+    return proposals;
+  }
+
+  async getReciprocityProposalsByFeedId({ feedId }) {
+    const myQuery = [{
+        "$filter": {
+        value: {
+            author: feedId,
+            content: {
+                type: "cashless/propose-reciprocity",
+                header: {version: this.version, network: this.network},
+            }
+        }
+      }
+    }];
+    try {
+        let results = await streamPull(
+            this.ssb.client().query.read({
+                query: myQuery,
+            })
+        );
+        let proposals = Promise.all(results.map(async (result) => await this.proposeReciprocityReducer(result)));
+        for (let i=0; i<results.length; i++) {
+            let promises = [];
+            let promiseRefs = results[i].promises;
+            for (let j=0; j<promiseRefs.length; j++) {
+                let promise = await this.getPromise(promiseRefs[j]);
+                promises.push(promise);
+            }
+            proposals[i].promises = promises;
+        }
+
+        return proposals;
+    } catch (_e) {
+        console.log("ERROR QUERYING FLUME DB:", e);
+        return [];
+    }
+  }
+
+  async getReciprocityAcceptMsgsByFeedId({ feedId }) {
+    const myQuery = [{
+        "$filter": {
+        value: {
+            author: feedId,
+            content: {
+                type: "cashless/accept-reciprocity",
+                header: {version: this.version, network: this.network},
+            }
+        }
+      }
+    }];
+    try {
+        let results = await streamPull(
+            this.ssb.client().query.read({
+                query: myQuery,
+            })
+        );
+        let acceptMsgs = Promise.all(results.map(async (result) => await this.acceptReciprocityReducer(result)));
+        return acceptMsgs;
+    } catch (_e) {
+        console.log("ERROR QUERYING FLUME DB:", e);
+        return [];
+    }
+  }
+
+  async getReciprocityAcceptMsgsByReciprocityId({ reciprocityId }) {
+    const myQuery = [{
+        "$filter": {
+        value: {
+            content: {
+                type: "cashless/accept-reciprocity",
+                header: {version: this.version, network: this.network},
+                reciprocityId: reciprocityId,
+            }
+        }
+      }
+    }];
+    try {
+        let results = await streamPull(
+            this.ssb.client().query.read({
+                query: myQuery,
+            })
+        );
+        let acceptMsgs = Promise.all(results.map(async (result) => await this.acceptReciprocityReducer(result)));
+        return acceptMsgs;
+    } catch (_e) {
+        console.log("ERROR QUERYING FLUME DB:", e);
+        return [];
+    }
+  }
+
+  async getAllReciprocityAcceptMsgs() {
+    try {
+        let ids = await this.getFeedIds();
+        let acceptMsgs = [];
+        for (let i=0; i<ids.length; i++) {
+            let accepts = await this.getReciprocityAcceptMsgsByFeedId({feedId: ids[i]});
+            acceptMsgs.push(...accepts);
+        }
+        return acceptMsgs;
+    } catch(e) {
+        console.log("ERROR QUERYING FLUME DB:", e);
+        return [];
+    }
+  }
+
+  async getAllCompletedReciprocityIds() {
+      let rmsgs = await this.getAllCompletedReciprocityMsgs();
+      let set = new Set(rmsgs.map(r => r.reciprocityId))
+      return [...set];
+  }
+
+  async getCompletedReciprocityMsgsByFeedId({ feedId }) {
+    const myQuery = [{
+        "$filter": {
+        value: {
+            author: feedId,
+            content: {
+                type: "cashless/complete-reciprocity",
+                header: {version: this.version, network: this.network},
+            }
+        }
+      }
+    }];
+    try {
+        let results = await streamPull(
+            this.ssb.client().query.read({
+                query: myQuery,
+            })
+        );
+        let crMsgs = Promise.all(results.map(async (result) => await this.completeReciprocityReducer(result)));
+        return crMsgs;
+    } catch (_e) {
+        console.log("ERROR QUERYING FLUME DB:", e);
+        return [];
+    }
+  }
+
+  async getAllCompletedReciprocityMsgs() {
+    try {
+        let ids = await this.getFeedIds();
+        let crMsgs = [];
+        for (let i=0; i<ids.length; i++) {
+            let feedCRs = await this.getCompletedReciprocityMsgsByFeedId({feedId: ids[i]});
+            crMsgs.push(...feedCRs);
+        }
+        return crMsgs;
+    } catch(e) {
+        console.log("ERROR QUERYING FLUME DB:", e);
+        return [];
+    }
+  }
+
   async getFeedIds() {
       let msgs = await this.getAllIdMsgs();
       let allIds = new Set(msgs.map(msg => msg.author.id));
@@ -457,11 +711,20 @@ class ssbFlumeAPI extends DataSource {
             if (results[i].value.content.type=="cashless/promise") {
                 output.push(promiseDict[results[i].key]);
             } else if (results[i].value.content.type=="cashless/identity") {
-                output.push(this.identityReducer(results[i]));
+                let idMsg = await this.identityReducer(results[i]);
+                output.push(idMsg);
             } else if (results[i].value.content.type=="cashless/complete-settlement") {
-                output.push(this.completeSettlementReducer(results[i]));
+                let completeSettlementMsg = await this.completeSettlementReducer(results[i]);
+                output.push(completeSettlementMsg);
+            } else if (results[i].value.content.type=="cashless/propose-reciprocity") {
+                let proposeReciprocityMsg = await this.proposeReciprocityReducer(results[i]);
+                output.push(proposeReciprocityMsg);
+            } else if (results[i].value.content.type=="cashless/complete-reciprocity") {
+                let completeReciprocityMsg = await this.completeReciprocityReducer(results[i]);
+                output.push(completeReciprocityMsg);
             } else {
-                output.push(this.genericReducer(results[i]));
+                let genericMsg = await this.genericReducer(results[i]);
+                output.push(genericMsg);
             }
         }
         return output;
